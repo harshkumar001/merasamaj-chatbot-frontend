@@ -1,236 +1,328 @@
 import { useAuth } from "@/src/hooks/useAuth";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   FlatList,
   Image,
-  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { useKeyboardController } from "react-native-keyboard-controller";
-import Animated, {
-  useAnimatedStyle,
-  withTiming,
-} from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
 
-const colors = {
-  primary: "#4b7bec",
-  teal: "#20bf6b",
-  grey: "#d1d8e0",
-  dark: "#1e272e",
-};
-
-// -------------------- HEADER --------------------
-const Header = ({ title, onBack, avatar }) => (
-  <View style={styles.header}>
-    <TouchableOpacity onPress={onBack} style={styles.headerBack}>
-      <Ionicons name="chevron-back" size={28} color={colors.dark} />
-    </TouchableOpacity>
-
-    <View style={styles.headerTitleContainer}>
-      <Image source={{ uri: avatar }} style={styles.headerAvatar} />
-      <Text numberOfLines={1} style={styles.headerTitle}>
-        {title}
-      </Text>
-    </View>
-
-    <View style={{ width: 44 }} />
-  </View>
-);
-
-// -------------------- MESSAGE BUBBLE --------------------
-const MessageBubble = ({ item, currentUserId }) => {
-  const isMine = item.userId === currentUserId;
-
-  return (
-    <View
-      style={[
-        styles.bubbleContainer,
-        isMine ? styles.bubbleRight : styles.bubbleLeft,
-      ]}
-    >
-      <Text style={[styles.bubbleText, isMine && { color: "#fff" }]}>
-        {item.text}
-      </Text>
-    </View>
-  );
-};
-
-// -------------------- MAIN CHAT SCREEN --------------------
-export default function ChatScreen({ navigation, route }) {
-  const { user } = useAuth();
-
-  const chatTitle = route?.params?.title ?? "Chat";
-  const peerAvatar = route?.params?.avatar ?? "https://i.pravatar.cc/300";
-
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
-  const flatListRef = useRef(null);
-
-  // MOCK: initial assistant message
-  useEffect(() => {
-    setMessages([
-      {
-        id: "welcome-1",
-        text: "This is your assistant. Ask me anything!",
-        createdAt: Date.now(),
-        userId: "assistant",
-      },
-    ]);
-  }, []);
-
-  // -------------------- Keyboard Animation --------------------
-  const { height: keyboardHeight } = useKeyboardController();
-
-  const animatedInput = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateY: withTiming(-keyboardHeight, { duration: 180 }),
-      },
-    ],
-  }));
-
-  // -------------------- SEND MESSAGE --------------------
-  const sendMessage = useCallback(() => {
-    if (!text.trim()) return;
-
-    const msg = {
-      id: `local-${Date.now()}`,
-      text,
-      createdAt: Date.now(),
-      userId: user?.email ?? "me",
+/* ---------------------------------------------------
+   Types
+--------------------------------------------------- */
+type ChatItem =
+  | {
+      id: string;
+      type: "message";
+      text: string;
+      user: "me" | "ai";
+      createdAt: number;
+    }
+  | {
+      id: string;
+      type: "date";
+      label: string;
     };
 
-    setMessages((prev) => [msg, ...prev]);
+/* ---------------------------------------------------
+  Date Helpers (WhatsApp-style)
+--------------------------------------------------- */
+function formatDate(ts: number) {
+  const today = new Date();
+  const date = new Date(ts);
+
+  const isToday = today.toDateString() === date.toDateString();
+
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  const isYesterday = yesterday.toDateString() === date.toDateString();
+
+  if (isToday) return "Today";
+  if (isYesterday) return "Yesterday";
+
+  return date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/* ---------------------------------------------------
+  Main ChatScreen
+--------------------------------------------------- */
+export default function ChatScreen() {
+  const { user } = useAuth();
+
+  const userAvatar = user?.pic_url || "https://i.pravatar.cc/100?u=user";
+  const aiAvatar = "https://i.pravatar.cc/100?u=assistant";
+
+  const [items, setItems] = useState<ChatItem[]>([
+    {
+      id: "welcome-date",
+      type: "date",
+      label: "Today",
+    },
+    {
+      id: "1",
+      type: "message",
+      text: "Hello! I am your assistant. Ask me anything.",
+      user: "ai",
+      createdAt: Date.now(),
+    },
+  ]);
+
+  const [text, setText] = useState("");
+  const flatRef = useRef<FlatList>(null);
+
+  /* ---------------------------------------------------
+    Insert message WITH date separator logic
+  --------------------------------------------------- */
+  const addMessage = (msg: ChatItem) => {
+    setItems((prev) => {
+      const last = prev[prev.length - 1];
+
+      // Only compare with previous message
+      const lastDate =
+        last?.type === "message" ? formatDate(last.createdAt) : last?.label;
+
+      const newDate = msg.type === "message" ? formatDate(msg.createdAt) : null;
+
+      const needsSeparator = msg.type === "message" && lastDate !== newDate;
+
+      return [
+        ...prev,
+        ...(needsSeparator
+          ? [
+              {
+                id: "d-" + msg.id,
+                type: "date",
+                label: newDate!,
+              },
+            ]
+          : []),
+        msg,
+      ];
+    });
+  };
+
+  /* ---------------------------------------------------
+    Send Message
+  --------------------------------------------------- */
+  const sendMessage = () => {
+    if (!text.trim()) return;
+
+    const myMsg: ChatItem = {
+      id: Date.now().toString(),
+      type: "message",
+      text,
+      user: "me",
+      createdAt: Date.now(),
+    };
+
+    addMessage(myMsg);
     setText("");
 
-    // Auto-scroll
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-
-    // Mock: assistant reply
+    // Mock AI reply
     setTimeout(() => {
-      setMessages((prev) => [
-        {
-          id: `ai-${Date.now()}`,
-          text: `You said: "${msg.text}"`,
-          createdAt: Date.now(),
-          userId: "assistant",
-        },
-        ...prev,
-      ]);
-    }, 700);
-  }, [text, user]);
+      const aiReply: ChatItem = {
+        id: Date.now().toString() + "-ai",
+        type: "message",
+        text, // echo
+        user: "ai",
+        createdAt: Date.now(),
+      };
+      addMessage(aiReply);
+    }, 500);
 
+    setTimeout(() => {
+      flatRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+  };
+
+  /* ---------------------------------------------------
+    Renderer for each item
+  --------------------------------------------------- */
+  const renderItem = ({ item }: { item: ChatItem }) => {
+    if (item.type === "date") {
+      return (
+        <View style={styles.dateContainer}>
+          <Text style={styles.dateText}>{item.label}</Text>
+        </View>
+      );
+    }
+
+    const isMe = item.user === "me";
+    const avatar = isMe ? userAvatar : aiAvatar;
+
+    return (
+      <View
+        style={[
+          styles.row,
+          { justifyContent: isMe ? "flex-end" : "flex-start" },
+        ]}
+      >
+        {!isMe && <Image source={{ uri: avatar }} style={styles.avatar} />}
+
+        <View style={[styles.bubble, isMe ? styles.myBubble : styles.aiBubble]}>
+          <Text style={{ color: isMe ? "#fff" : "#000" }}>{item.text}</Text>
+        </View>
+
+        {isMe && <Image source={{ uri: avatar }} style={styles.avatar} />}
+      </View>
+    );
+  };
+
+  /* ---------------------------------------------------
+    UI
+  --------------------------------------------------- */
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <StatusBar barStyle="dark-content" backgroundColor="white" />
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#fff" }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "android" ? 30 : 0}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <Image source={{ uri: aiAvatar }} style={styles.headerAvatar} />
 
-      <Header
-        title={chatTitle}
-        avatar={peerAvatar}
-        onBack={() => navigation.goBack()}
-      />
+        <View style={{ marginLeft: 10 }}>
+          <Text style={styles.headerTitle}>AI Assistant</Text>
+          <Text style={styles.headerSubtitle}>Online</Text>
+        </View>
+      </View>
 
-      {/* CHAT LIST */}
+      {/* Messages */}
       <FlatList
-        ref={flatListRef}
-        data={messages}
-        inverted
+        ref={flatRef}
+        data={items}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <MessageBubble item={item} currentUserId={user?.email} />
-        )}
-        contentContainerStyle={{ paddingVertical: 12 }}
+        renderItem={renderItem}
+        contentContainerStyle={{ padding: 12, paddingBottom: 80 }}
+        onContentSizeChange={() =>
+          flatRef.current?.scrollToEnd({ animated: true })
+        }
       />
 
-      {/* INPUT BAR */}
-      <Animated.View style={[styles.inputBar, animatedInput]}>
+      {/* Input */}
+      <View style={styles.inputBar}>
         <TextInput
-          placeholder="Message..."
-          style={styles.input}
           value={text}
           onChangeText={setText}
-          multiline
+          placeholder="Message..."
+          style={styles.input}
         />
-
         <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}>
-          <Ionicons name="send" size={20} color="white" />
+          <Ionicons name="send" size={20} color="#fff" />
         </TouchableOpacity>
-      </Animated.View>
-    </SafeAreaView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
-// -------------------- STYLES --------------------
+/* ---------------------------------------------------
+  Styles
+--------------------------------------------------- */
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "white" },
-
-  // Header
+  /* Header */
   header: {
-    height: 64,
+    height: 60,
     flexDirection: "row",
     alignItems: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#eee",
     paddingHorizontal: 12,
-    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderColor: "#eee",
+    backgroundColor: "#fff",
   },
-  headerBack: { width: 44, justifyContent: "center" },
-  headerTitleContainer: { flex: 1, flexDirection: "row", alignItems: "center" },
-  headerAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 12 },
-  headerTitle: { fontSize: 16, fontWeight: "600", color: colors.dark },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#000",
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 2,
+  },
 
-  // Bubbles
-  bubbleContainer: {
-    maxWidth: "75%",
-    paddingVertical: 10,
+  /* Date separator */
+  dateContainer: {
+    alignSelf: "center",
+    backgroundColor: "#e6e6e6",
     paddingHorizontal: 14,
-    borderRadius: 18,
+    paddingVertical: 4,
+    borderRadius: 12,
     marginVertical: 6,
-    marginHorizontal: 12,
   },
-  bubbleLeft: {
-    backgroundColor: "#f1f1f1",
-    alignSelf: "flex-start",
+  dateText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#555",
   },
-  bubbleRight: {
-    backgroundColor: colors.primary,
-    alignSelf: "flex-end",
-  },
-  bubbleText: { fontSize: 15, color: colors.dark },
 
-  // Input Bar
+  /* Message Row */
+  row: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginVertical: 5,
+  },
+
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginHorizontal: 6,
+  },
+
+  bubble: {
+    padding: 10,
+    borderRadius: 14,
+    maxWidth: "70%",
+  },
+  myBubble: {
+    backgroundColor: "#4b7bec",
+  },
+  aiBubble: {
+    backgroundColor: "#f1f1f1",
+  },
+
+  /* Input Bar */
   inputBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     flexDirection: "row",
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderColor: "#eee",
     padding: 10,
+    borderTopWidth: 1,
+    borderColor: "#ddd",
+    backgroundColor: "#fff",
   },
   input: {
     flex: 1,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 25,
-    paddingHorizontal: 16,
+    backgroundColor: "#f4f4f4",
+    borderRadius: 20,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    maxHeight: 120,
   },
   sendBtn: {
-    marginLeft: 10,
-    backgroundColor: colors.primary,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
+    marginLeft: 8,
+    backgroundColor: "#4b7bec",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: "center",
+    alignItems: "center",
   },
 });
