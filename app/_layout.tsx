@@ -1,24 +1,47 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { AuthProvider } from "@/src/context/AuthContext";
+import { ThemeProvider } from "@/src/context/ThemeContext";
+import useTheme from "@/src/hooks/useTheme";
+import { LanguageProvider } from "@/src/i18n/LanguageProvider";
+import { Slot } from "expo-router";
+import { StyleSheet, View } from "react-native";
+import { KeyboardProvider } from "react-native-keyboard-controller";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
-
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+// We need a nested component to access the theme hook
+function ThemedLayout() {
+  const { colors } = useTheme();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.background }]}
+      edges={["top", "right", "left"]}
+    >
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Slot />
+      </View>
+    </SafeAreaView>
   );
 }
+
+export default function RootLayout() {
+  return (
+    <KeyboardProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <LanguageProvider>
+            <ThemedLayout />
+          </LanguageProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </KeyboardProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+  },
+});

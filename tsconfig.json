@@ -3,15 +3,23 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
-  ]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }
+// {
+// "compilerOptions": {
+// "target": "esnext",
+// "module": "esnext",
+// "jsx": "react-jsx",
+// "strict": true,
+// "moduleResolution": "node",
+// "esModuleInterop": true,
+// "skipLibCheck": true,
+// "resolveJsonModule": true,
+// "baseUrl": ".",
+// "paths": {}
+// },
+// "exclude": ["node_modules", "babel.config.js", "metro.config.js", "jest.config.js"]
+// }
